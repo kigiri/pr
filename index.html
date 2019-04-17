@@ -15,6 +15,15 @@ const rand = () =>
 
 const query = `
 query ($name: String!, $owner: String!) {
+
+  organization(login: $owner) {
+    login
+    repository(name: $name) {
+      description
+      name
+    }
+  }
+
   repository(owner: $owner, name: $name) {
     pullRequests(first: 10, states: OPEN) {
       edges {
@@ -47,7 +56,7 @@ const getList = async variables => {
     headers: {
       accept: '*/*',
       'content-type': 'application/json',
-      Authorization: `bearer ${localStorage.token}`,
+      Authorization: `token ${localStorage.token}`,
     },
     body: JSON.stringify({ query, variables }),
     method: 'POST',
@@ -93,7 +102,7 @@ const getToken = async () => {
     `state=${state}`,
 
     // A space-delimited list of scopes.
-    `scopes=${encodeURIComponent(['user', 'repo'].join(' '))}`,
+    `scope=${encodeURIComponent(['user', 'repo'].join(' '))}`,
   ].join('&')}`
 
   // load the address  

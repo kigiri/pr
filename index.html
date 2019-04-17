@@ -58,7 +58,7 @@ const getList = async variables => {
 
 // getList({ name: 'all', owner: '01-edu' })
 
-const getToken = () => {
+const getToken = async () => {
   const { searchParams } = new URL(window.location)
   window.history.replaceState('', '', window.location.pathname)
   const cachedToken = localStorage.token
@@ -67,9 +67,15 @@ const getToken = () => {
   const paramState = searchParams.get('state')
   if (paramState && searchParams.has('code')) {
     if (paramState !== localStorage.state) {
-      throw Error('state missmatch')
+      localStorage.removeItem('state')
+      localStorage.removeItem('token')
+      return getToken()
     }
-    // POST -> githubUrl
+    const res = await fetch(`https://pr.kigiri.now.sh/auth?${searchParams}`)
+    const body = await res.text()
+    console.log({ res, body })
+    console.log(new URLSearchParams(body))
+
     return
   }
   const state = [rand(), rand(), rand()].join('-')
@@ -99,7 +105,7 @@ const getToken = () => {
  
 getToken()
   .then(() => {
-
+    console.log(localStorage.token)
   })
 
 </script>

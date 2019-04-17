@@ -43,7 +43,7 @@ query ($name: String!, $owner: String!) {
 
 const getList = async variables => {
   const res = await fetch('https://api.github.com/graphql', {
-    credentials: 'include',
+   // credentials: 'include',
     headers: {
       accept: '*/*',
       'content-type': 'application/json',
@@ -57,6 +57,7 @@ const getList = async variables => {
 }
 
 // getList({ name: 'all', owner: '01-edu' })
+
 
 const getToken = async () => {
   const { searchParams } = new URL(window.location)
@@ -73,11 +74,10 @@ const getToken = async () => {
     }
     const res = await fetch(`https://pr.kigiri.now.sh/auth?${searchParams}`)
     const body = await res.text()
-    console.log({ res, body })
-    console.log(new URLSearchParams(body))
-
-    return
+    const token = new URLSearchParams(body).get('access_token')
+    return localStorage.token = token
   }
+
   const state = [rand(), rand(), rand()].join('-')
   localStorage.state = state
 
@@ -104,8 +104,22 @@ const getToken = async () => {
 }
  
 getToken()
-  .then(() => {
+  .then(async token => {
+    console.log({ token })
     console.log(localStorage.token)
+    const { repository } = (await getList({ name: 'all', owner: '01-edu' })).data
+
+    const res = await fetch('https://api.github.com/user', {
+     // credentials: 'include',
+      headers: {
+        accept: '*/*',
+        'content-type': 'application/json',
+        Authorization: `bearer ${localStorage.token}`,
+      },
+      mode: 'cors',
+    })
+    const json = await res.json()
+    console.log(repository, json)
   })
 
 </script>

@@ -6,7 +6,7 @@
 <body>
 <script type="module">
 const authUrl = 'https://github.com/login/oauth/authorize'
-const githubUrl = 'https://github.com/login/oauth/access_token' // POST
+// const githubUrl = 'https://github.com/login/oauth/access_token' // POST
 
 const rand = () =>
   Math.random()
@@ -82,7 +82,7 @@ const getToken = async () => {
   localStorage.state = state
 
   // Request a user's GitHub identity
-  const authorizationUrl = `${githubUrl}?${[
+  const authorizationUrl = `${authUrl}?${[
     // Required. The client ID you received from GitHub when you registered.
     `client_id=bc9a4b96852fb49c7cb9`,
 

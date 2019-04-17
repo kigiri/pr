@@ -25,13 +25,13 @@ module.exports = (req, res) => {
       'Content-Length': Buffer.byteLength(body),
     }
   }
-  const req = request(options, githubRes => {
+  const githubReq = request(options, githubRes => {
     githubRes.pause()
     // githubRes.headers['access-control-allow-origin'] = '*'
     res.writeHeader(githubRes.statusCode, githubRes.headers)
     githubRes.pipe(res, { end: true })
     githubRes.resume()
   })
-  req.write(body)
-  req.end()
+  githubReq.write(body)
+  githubReq.end()
 }

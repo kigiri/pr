@@ -1,10 +1,92 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title></title>
-</head>
-<body>
-<script type="module">
+  <head>
+    <title></title>
+<style type="text/css">
+
+:root {
+  --background-dark: hsl(231, 15%, 14%);
+  --background: hsl(231, 15%, 18%);
+  --background-light: hsl(231, 15%, 22%);
+  --selection-dark: hsl(231, 14%, 26.5%);
+  --selection: hsl(231, 14%, 31%);
+  --selection-light: hsl(231, 14%, 35%);
+  --foreground-dark: hsl(60, 6%, 64%);
+  --foreground: hsl(60, 18%, 80%);
+  --foreground-light: hsl(60, 30%, 96%);
+  --comment: #6272a4;
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #ffb86c;
+  --pink: #ff79c6;
+  --purple: #bd93f9;
+  --red: #ff5555;
+  --yellow: #f1fa8c;
+  --1: 3.7vw;
+  --a: calc(var(--1) / 30);
+  --b: calc(var(--1) / 20);
+  --c: calc(var(--1) / 10);
+  --d: calc(var(--1) / 5);
+  --0: calc(var(--1) / 2);
+  --2: calc(var(--1) * 2);
+  --3: calc(var(--1) * 3);
+  --4: calc(var(--1) * 4);
+  --5: calc(var(--1) * 5);
+  --6: calc(var(--1) * 6);
+  --7: calc(var(--1) * 7);
+  --8: calc(var(--1) * 8);
+  --9: calc(var(--1) * 9);
+  --10: calc(var(--1) * 10);
+  --11: calc(var(--1) * 11);
+  --12: calc(var(--1) * 12);
+}
+
+@media all and (min-width: 812px) {
+  :root {
+    --1: 32px;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  font-family: monospace;
+  font-size: var(--0);
+  background-color: inherit;
+  color: inherit;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  white-space: pre-wrap;
+  overflow-x: hidden;
+}
+
+.message {
+  display: inline-block;
+  color: var(--comment);
+  padding-left: 2ch;
+}
+
+</style>
+  </head>
+  <body style="opacity: 0.75">
+    <script type="module">
+
+const c = [
+  'background-dark', 'background', 'background-light', 'selection-dark',
+  'selection', 'selection-light', 'foreground-dark', 'foreground',
+  'foreground-light', 'comment', 'cyan', 'green', 'orange', 'pink', 'purple',
+  'red', 'yellow',
+].reduce((acc, color) => {
+
+  const on = `<span style="color:var(--${color})">`
+  const f = text => `${on}${text}</span>`
+  f.on = on
+
+  return {...acc, [color.replace(/-(.)/, (_,a)=> a.toUpperCase())]: f }
+}, { off: `</span>` })
+
 const authUrl = 'https://github.com/login/oauth/authorize'
 // const githubUrl = 'https://github.com/login/oauth/access_token' // POST
 
@@ -16,30 +98,26 @@ const rand = () =>
 const query = `
 query ($name: String!, $owner: String!) {
 
-  organization(login: $owner) {
-    login
-    repository(name: $name) {
-      description
-      name
-    }
-  }
-
   repository(owner: $owner, name: $name) {
-    pullRequests(first: 10, states: OPEN) {
+    pullRequests(first: 100, states: OPEN) {
       edges {
         node {
-          author {
-            avatarUrl
-            login
-          }
+          number
+          author { login }
+          baseRepository { nameWithOwner }
+          createdAt
           additions
+          deletions
+          mergeable
+          state
+          title
+          isDraft
           activeLockReason
           closed
-          body
+          bodyText
           assignees(first: 10) {
             edges {
               node {
-                avatarUrl
                 login
               }
             }
@@ -54,15 +132,24 @@ const getList = async variables => {
   const res = await fetch('https://api.github.com/graphql', {
    // credentials: 'include',
     headers: {
-      accept: '*/*',
+      accept: 'application/vnd.github.shadow-cat-preview+json',
       'content-type': 'application/json',
-      Authorization: `token ${localStorage.token}`,
+      Authorization: `bearer ${localStorage.token}`,
     },
     body: JSON.stringify({ query, variables }),
     method: 'POST',
     mode: 'cors',
   })
-  return res.json()
+  const { data, errors } = await res.json()
+  if (errors) {
+    const err = Error(errors[0].message)
+    err.type = errors[0].type
+    err.line = errors[0].line
+    err.column = errors[0].column
+    throw err
+  }
+  const pulls = data.repository && data.repository.pullRequests
+  return pulls && pulls.edges.map(e => e.node)
 }
 
 // getList({ name: 'all', owner: '01-edu' })
@@ -102,35 +189,62 @@ const getToken = async () => {
     `state=${state}`,
 
     // A space-delimited list of scopes.
-    `scope=${encodeURIComponent(['user', 'repo'].join(' '))}`,
+    `scope=${encodeURIComponent(['user', 'repo', 'read:org'].join(' '))}`,
   ].join('&')}`
 
-  // load the address  
+  // load the address
   window.location.replace(authorizationUrl)
 
   // return an unresolvable promise to pause
   return new Promise(() => {})
 }
- 
+
+const X = c.red('x')
+const O = c.green('o')
+const TO = c.pink('▸')
+const FROM = c.pink('FROM')
+const mergeable = pr => pr.mergeable === 'MERGEABLE' ? O : X
+const assignees = pr => {
+  console.log(pr)
+  if (!pr.assignees.edges.length) return ''
+  return `${TO} ${pr.assignees.edges.map(e => e.node.login).join(', ')}`
+}
+
+const empty = str => Boolean(str.trim())
+const DASH = c.comment('-')
+
+document.body.innerHTML = localStorage.content || ''
+
 getToken()
   .then(async token => {
-    console.log({ token })
-    console.log(localStorage.token)
-    const { repository } = (await getList({ name: 'all', owner: '01-edu' })).data
-
-    const res = await fetch('https://api.github.com/user', {
-     // credentials: 'include',
-      headers: {
-        accept: '*/*',
-        'content-type': 'application/json',
-        Authorization: `bearer ${localStorage.token}`,
-      },
-      mode: 'cors',
-    })
-    const json = await res.json()
-    console.log(repository, json)
+    const pulls = (await Promise.all([
+      getList({ name: 'all', owner: '01-edu' }),
+      getList({ name: 'public', owner: '01-edu' }),
+    ]))
+    .flat()
+    .map(pr => ({
+      ...pr,
+      createdAt: new Date(pr.createdAt)
+    }))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(pr => [
+      [
+        mergeable(pr),
+        `${c.purple(pr.baseRepository.nameWithOwner)}${c.yellow(`#${pr.number}`)}`,
+        `${pr.additions - pr.deletions} lines`,
+        `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
+      ].join(' '),
+      `  ${c.cyan(pr.author.login)}: ${c.foregroundLight(pr.title)}`,
+      `  ${assignees(pr)}`,
+      pr.bodyText && `<div class="message">${pr.bodyText}</div>`,
+    ]
+    .filter(empty)
+    .join('\n'))
+    document.body.style.opacity = 1
+    const content = pulls.join('\n\n')
+    localStorage.content = content
+    document.body.innerHTML = content
   })
-
 </script>
-</body>
+  </body>
 </html>

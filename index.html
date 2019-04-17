@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title></title>
+</head>
+<body>
+<script type="module">
+const authUrl = 'https://github.com/login/oauth/authorize'
+const githubUrl = 'https://github.com/login/oauth/access_token' // POST
+
+const rand = () =>
+  Math.random()
+    .toString(36)
+    .slice(2)
+
+const query = `
+query ($name: String!, $owner: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 10, states: OPEN) {
+      edges {
+        node {
+          author {
+            avatarUrl
+            login
+          }
+          additions
+          activeLockReason
+          closed
+          body
+          assignees(first: 10) {
+            edges {
+              node {
+                avatarUrl
+                login
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+const getList = async variables => {
+  const res = await fetch('https://api.github.com/graphql', {
+    credentials: 'include',
+    headers: {
+      accept: '*/*',
+      'content-type': 'application/json',
+      Authorization: `bearer ${localStorage.token}`,
+    },
+    body: JSON.stringify({ query, variables }),
+    method: 'POST',
+    mode: 'cors',
+  })
+  return res.json()
+}
+
+// getList({ name: 'all', owner: '01-edu' })
+
+const getToken = () => {
+  const { searchParams } = new URL(window.location)
+  window.history.replaceState('', '', window.location.pathname)
+  const cachedToken = localStorage.token
+  if (cachedToken) return cachedToken
+
+  const paramState = searchParams.get('state')
+  if (paramState && searchParams.has('code')) {
+    if (paramState !== localStorage.state) {
+      throw Error('state missmatch')
+    }
+    // POST -> githubUrl
+    return
+  }
+  const state = [rand(), rand(), rand()].join('-')
+  localStorage.state = state
+
+  // Request a user's GitHub identity
+  const authorizationUrl = `${githubUrl}?${[
+    // Required. The client ID you received from GitHub when you registered.
+    `client_id=bc9a4b96852fb49c7cb9`,
+
+    // The URL in your application where users will be sent after authorization.
+    `redirect_uri=${encodeURIComponent(window.location)}`,
+
+    // A random state
+    `state=${state}`,
+
+    // A space-delimited list of scopes.
+    `scopes=${encodeURIComponent(['user', 'repo'].join(' '))}`,
+  ].join('&')}`
+
+  // load the address  
+  window.location.replace(authorizationUrl)
+
+  // return an unresolvable promise to pause
+  return new Promise(() => {})
+}
+ 
+getToken()
+  .then(() => {
+
+  })
+
+</script>
+</body>
+</html>

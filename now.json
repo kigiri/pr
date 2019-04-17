@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "name": "service",
+  "alias": "",
+  "builds": [
+    {
+      "src": "/auth.js",
+      "use": "@now/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/auth",
+      "dest": "/auth.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "https://kigiri.github.io"
+      }
+    }
+  ],
+  "env": { "SECRET": "@secret" }
+}

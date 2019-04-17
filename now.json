@@ -17,5 +17,5 @@
       }
     }
   ],
-  "env": { "SECRET": "@secret" }
+  "env": { "SECRET": "@pr-github-oauth-secret" }
 }

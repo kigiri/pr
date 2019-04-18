@@ -132,6 +132,14 @@ query ($name: String!, $owner: String!) {
           activeLockReason
           closed
           bodyText
+          reviews(first: 10) {
+            nodes {
+              state
+              author {
+                login
+              }
+            }
+          }
           reviewRequests(first: 10) {
             nodes {
               requestedReviewer {
@@ -221,21 +229,50 @@ const getToken = async () => {
   return new Promise(() => {})
 }
 
-const X = c.red('x')
-const O = c.green('o')
-const TO = c.pink('▸')
-const FROM = c.pink('FROM')
-const mergeable = pr => {
-  if (pr.isDraft) return c.comment('-')
-  return pr.mergeable === 'MERGEABLE' ? O : X
+const X = c.red('✘')
+const O = c.green('✔')
+const TO = c.pink('❱')
+
+const reviewStates = {
+  // A review that has not yet been submitted.
+  PENDING: c.foregroundDark('◍'),
+
+  // An informational review.
+  COMMENTED: c.foregroundLight('✱'),
+
+  // A review allowing the pull request to merge.
+  APPROVED: O,
+
+  // A review blocking the pull request from merging.
+  CHANGES_REQUESTED: X,
+
+  // A review that has been dismissed.
+  DISMISSED: c.comment('▰'),
 }
 
-const assign = pr => [...new Set([
-  ...pr.assignees.nodes.map(n => n.login),
-  ...pr.reviewRequests.nodes.map(n => n.requestedReviewer.login),
-])].sort()
+const mergeable = pr => {
+  if (pr.isDraft) return reviewStates.PENDING
+  return pr.mergeable === 'MERGEABLE' ? O : X
+}
+const sortedUnique = arr => [...new Set(arr)].sort()
+const assign = pr => {
+  const reviews = pr.reviews.nodes.reduce((acc, n) => ({
+    ...acc,
+    [n.author.login]: reviewStates[n.state]
+  }), {})
 
-const assignees = pr => pr.to.length ? `${TO} ${pr.to.join(', ')}` : ''
+  const logins = sortedUnique([
+    ...pr.reviews.nodes.map(n => n.author.login),
+    ...pr.assignees.nodes.map(n => n.login),
+    ...pr.reviewRequests.nodes.map(n => n.requestedReviewer.login),
+  ])
+
+  const value = logins
+    .map(login => `${(reviews[login] || reviewStates.PENDING).slice(0, -7)} ${login}</span>`)
+    .join(', ')
+
+  return { logins, value }
+}
 
 const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 const units = Object.entries({
@@ -260,14 +297,15 @@ const fmtTime = time => {
     unit = nextUnit
     value = nextValue
   }
-  return rtf.format(-Math.floor(diff / 4*3*4*7*24*60*60*1000), 'year')
+  return rtf.format(-Math.floor(diff / (4*3*4*7*24*60*60*1000)), 'year')
 }
+
 const empty = str => Boolean(str.trim())
 const DASH = c.comment('-')
 const generateHTML = pr => `<article ${[
   `data-draft=${pr.isDraft ? 'on' : 'off'}`,
   `data-unassigned=${!pr.to.length ? 'on' : 'off'}`,
-  `data-assigned=${pr.to.includes(pr.user) ? 'on' : 'off'}`,
+  `data-assigned=${pr.to.logins.includes(pr.user) ? 'on' : 'off'}`,
 ].join(' ')}>${[
   [
     mergeable(pr),
@@ -283,8 +321,8 @@ const generateHTML = pr => `<article ${[
     `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
     `<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`
   ].join(' '),
-  `  ${c.cyan(pr.author.login)}: ${c.foregroundLight(pr.title)}`,
-  `  ${assignees(pr)}`,
+  `  ${c.cyan(pr.author.login)} - ${c.foregroundLight(pr.title)}`,
+  `  ${pr.to.value && `${TO} ${pr.to.value}`}`,
   pr.bodyText && `<div class="message">${pr.bodyText}</div>`,
 ]
   .filter(empty)
@@ -314,14 +352,20 @@ const filterElements = () => {
 }
 
 const showTime = () => {
-
-  for (const article of document.getElementsByTagName('article')) {
-    if (!offTypes.length && !onTypes.length) {
-      article.style.display = ''
-      continue
+  const work = []
+  for (const time of document.getElementsByTagName('time')) {
+    const newTime = fmtTime(new Date(time.dateTime))
+    if (newTime !== time.textContent) {
+      work.push(() => time.textContent = newTime)
     }
+  }
 
-    article.style.display = show ? '' : 'none'
+  if (work.length) {
+    requestAnimationFrame(() => {
+      for (const w of work) {
+        w()
+      }
+    })
   }
 }
 
@@ -370,13 +414,14 @@ for (const button of document.getElementsByTagName('button')) {
     state[type] = s
     filterElements()
     applyButtonState(button, type, s)
-    console.log(state)
   })
 }
 
 // restore cached state
 root.innerHTML = localStorage.content || ''
 filterElements()
+showTime()
+setInterval(showTime, 100)
 
 // fetch fresh state
 getToken().then(token => {

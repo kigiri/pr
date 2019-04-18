@@ -1,7 +1,6 @@
 {
   "version": 2,
-  "name": "service",
-  "alias": "pr-auth",
+  "name": "pr",
   "builds": [
     {
       "src": "/auth.js",

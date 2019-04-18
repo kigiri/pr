@@ -1,8 +1,8 @@
-const { get, createServer } = require('http')
+const { request, get, createServer } = require('http')
 const port = 6546
 process.env.SECRET = 'pouet'
 
-const test = require('./auth-handler.js')({ domain: 'localhost', port, protocol: 'http:' })
+const test = require('./auth-handler.js')({ hostname: 'localhost', port, request })
 createServer(async (req, res) => {
   console.log(req.url)
   if (req.url === '/login/oauth/access_token') {
@@ -27,3 +27,4 @@ createServer(async (req, res) => {
 // test()
 
 
+.now.sh 

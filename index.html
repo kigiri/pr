@@ -122,6 +122,7 @@ query ($name: String!, $owner: String!) {
           author { login }
           baseRepository { nameWithOwner }
           createdAt
+          updatedAt
           additions
           deletions
           mergeable
@@ -131,9 +132,18 @@ query ($name: String!, $owner: String!) {
           activeLockReason
           closed
           bodyText
+          reviewRequests(first: 10) {
+            nodes {
+              requestedReviewer {
+                ... on User {
+                  login 
+                }
+              }
+            }
+          }
           assignees(first: 10) {
-            edges {
-              node {
+            nodes {
+              ...on User {
                 login
               }
             }
@@ -219,19 +229,45 @@ const mergeable = pr => {
   if (pr.isDraft) return c.comment('-')
   return pr.mergeable === 'MERGEABLE' ? O : X
 }
-const assignees = pr => {
-  if (!pr.assignees.edges.length) return ''
-  return `${TO} ${pr.assignees.edges.map(e => e.node.login).join(', ')}`
-}
 
+const assign = pr => [...new Set([
+  ...pr.assignees.nodes.map(n => n.login),
+  ...pr.reviewRequests.nodes.map(n => n.requestedReviewer.login),
+])].sort()
+
+const assignees = pr => pr.to.length ? `${TO} ${pr.to.join(', ')}` : ''
+
+const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+const units = Object.entries({
+  second: 1000,
+  minute: 60*1000,
+  hour: 60*60*1000,
+  day: 24*60*60*1000,
+  week: 7*24*60*60*1000,
+  month: 4*7*24*60*60*1000,
+  quarter: 3*4*7*24*60*60*1000,
+})
+
+const fmtTime = time => {
+  const diff = Date.now() - time
+  let unit
+  let value
+  for (const [ nextUnit, nextValue ] of units) {
+    if (diff < nextValue) {
+      if (!unit) return 'just now'
+      return rtf.format(-Math.floor(diff / value), unit)
+    }
+    unit = nextUnit
+    value = nextValue
+  }
+  return rtf.format(-Math.floor(diff / 4*3*4*7*24*60*60*1000), 'year')
+}
 const empty = str => Boolean(str.trim())
 const DASH = c.comment('-')
 const generateHTML = pr => `<article ${[
   `data-draft=${pr.isDraft ? 'on' : 'off'}`,
-  `data-unassigned=${!pr.assignees.edges.length ? 'on' : 'off'}`,
-  `data-assigned=${
-    pr.assignees.edges.some(e => e.node.login === pr.user) ? 'on' : 'off'
-  }`,
+  `data-unassigned=${!pr.to.length ? 'on' : 'off'}`,
+  `data-assigned=${pr.to.includes(pr.user) ? 'on' : 'off'}`,
 ].join(' ')}>${[
   [
     mergeable(pr),
@@ -245,6 +281,7 @@ const generateHTML = pr => `<article ${[
     ].join(''),
     `${pr.additions - pr.deletions} lines`,
     `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
+    `<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`
   ].join(' '),
   `  ${c.cyan(pr.author.login)}: ${c.foregroundLight(pr.title)}`,
   `  ${assignees(pr)}`,
@@ -252,6 +289,7 @@ const generateHTML = pr => `<article ${[
 ]
   .filter(empty)
   .join('\n')}
+
 </article>`
 
 const root = document.getElementById('root')
@@ -275,6 +313,18 @@ const filterElements = () => {
   }
 }
 
+const showTime = () => {
+
+  for (const article of document.getElementsByTagName('article')) {
+    if (!offTypes.length && !onTypes.length) {
+      article.style.display = ''
+      continue
+    }
+
+    article.style.display = show ? '' : 'none'
+  }
+}
+
 const applyButtonState = (button, type, s) => {
   button.className = s
   button.textContent = `${statesIcons[s]}${type}`
@@ -286,8 +336,13 @@ const loadPulls = async (token, userPromise) => {
   const publicPr = getList({ name: 'public', owner: '01-edu' }, token)
   const user = await userPromise
   const pulls = [ ...(await allPr), ...(await publicPr) ]
-    .map(pr => ({ ...pr, createdAt: new Date(pr.createdAt), user }))
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(pr => ({
+      ...pr,
+      user,
+      updatedAt: new Date(pr.updatedAt),
+      to: assign(pr),
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
     .map(generateHTML)
 
   document.body.style.opacity = 1

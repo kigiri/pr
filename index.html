@@ -2,6 +2,9 @@
 <html>
   <head>
     <title></title>
+    <meta charset="utf-8">
+     <meta name="theme-color" content="#000000">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="data:image/x-icon;base64,AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAgAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAA////AN3V1QDo4+MA/4CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADMiIiIiMwADNERERERDMAMkIiIiIkIwAyQyMjIyQjADJBMTExNCMAMkMTExMUIwAyQRERERQjADJBMTExNCMAMkEREREUIwAyQxMTIyQjADJBERRERDMAMkERFBFCMwAyQREUFCMzADJBERRCMzMAM0RERCMzMwADMiIjMzMwDAAwAAgAEAAIABAACAAQAAgAEAAIABAACAAQAAgAEAAIABAACAAQAAgAEAAIABAACAAQAAgAEAAIABAADAAwAA" rel="icon" type="image/x-icon">
 <style type="text/css">
 
@@ -51,15 +54,23 @@
 * {
   box-sizing: border-box;
   font-family: monospace;
-  font-size: var(--0);
+  font-size: var(--0)!important;
   background-color: inherit;
   color: inherit;
 }
 
 body {
+  margin: 0;
+  padding: 0;
   background-color: var(--background);
   color: var(--foreground);
-  white-space: pre-wrap;
+  font-size: var(--0);
+  overflow-y: hidden;
+  padding: var(--d);
+}
+
+#root {
+  width: 100vw;
   overflow-x: hidden;
 }
 
@@ -67,10 +78,7 @@ body {
   display: inline-block;
   color: var(--comment);
   padding-left: 2ch;
-}
-
-#menu {
-  text-align: center;
+  white-space: pre-wrap;
 }
 
 button {
@@ -89,8 +97,10 @@ a {
 </style>
   </head>
   <body style="opacity: 0.75">
-<div id="menu"><button> draft</button><button> unassigned</button><button> assigned</button></div>
-<div id="root"></div>
+    <button>◦draft</button>
+    <button>◦unassigned</button>
+    <button>◦assigned</button>
+    <div id="root"></div>
 <script type="module">
 
 const c = [
@@ -230,12 +240,11 @@ const getToken = async () => {
 }
 
 const X = c.red('✘')
-const O = c.green('✔')
-const TO = c.pink('❱')
+const O = c.green('❱')
 
 const reviewStates = {
   // A review that has not yet been submitted.
-  PENDING: c.foregroundDark('◍'),
+  PENDING: c.orange('◍'),
 
   // An informational review.
   COMMENTED: c.foregroundLight('✱'),
@@ -251,7 +260,7 @@ const reviewStates = {
 }
 
 const mergeable = pr => {
-  if (pr.isDraft) return reviewStates.PENDING
+  if (pr.isDraft) return c.foregroundDark('◍')
   return pr.mergeable === 'MERGEABLE' ? O : X
 }
 const sortedUnique = arr => [...new Set(arr)].sort()
@@ -269,7 +278,7 @@ const assign = pr => {
 
   const value = logins
     .map(login => `${(reviews[login] || reviewStates.PENDING).slice(0, -7)} ${login}</span>`)
-    .join(', ')
+    .join(' ◦ ')
 
   return { logins, value }
 }
@@ -300,14 +309,16 @@ const fmtTime = time => {
   return rtf.format(-Math.floor(diff / (4*3*4*7*24*60*60*1000)), 'year')
 }
 
+const o = c.comment(' ◦ ')
+const line = c.comment('-'.repeat(300))
 const empty = str => Boolean(str.trim())
-const DASH = c.comment('-')
 const generateHTML = pr => `<article ${[
   `data-draft=${pr.isDraft ? 'on' : 'off'}`,
-  `data-unassigned=${!pr.to.length ? 'on' : 'off'}`,
+  `data-unassigned=${pr.to.logins.length ? 'off' : 'on'}`,
   `data-assigned=${pr.to.logins.includes(pr.user) ? 'on' : 'off'}`,
 ].join(' ')}>${[
   [
+    '<div style="white-space:nowrap;display:inline-block">',
     mergeable(pr),
     [
       `<a href="https://github.com/${pr.baseRepository.nameWithOwner}/pull/${
@@ -319,15 +330,17 @@ const generateHTML = pr => `<article ${[
     ].join(''),
     `${pr.additions - pr.deletions} lines`,
     `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
-    `<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`
+    `<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`,
+    line,
+    '</div>'
   ].join(' '),
-  `  ${c.cyan(pr.author.login)} - ${c.foregroundLight(pr.title)}`,
-  `  ${pr.to.value && `${TO} ${pr.to.value}`}`,
+  `${o}${c.cyan(pr.author.login)} ${c.comment('▹')} ${c.foregroundLight(pr.title)}`,
+  `${o}${pr.to.value}`,
   pr.bodyText && `<div class="message">${pr.bodyText}</div>`,
 ]
   .filter(empty)
-  .join('\n')}
-
+  .join('<br>')}
+<br>${c.background('.')}
 </article>`
 
 const root = document.getElementById('root')
@@ -390,13 +403,15 @@ const loadPulls = async (token, userPromise) => {
     .map(generateHTML)
 
   document.body.style.opacity = 1
-  const content = pulls.join('')
-  localStorage.content = content
-  root.innerHTML = content
-  filterElements()
+  const content = `<div style="white-space:nowrap">${line}</div>${pulls.join('')}`
+  if (localStorage.content !== content) {
+    localStorage.content = content
+    root.innerHTML = content
+    filterElements()
+  }
 }
 
-const statesIcons = { disabled: ' ', on: '+', off: '-' }
+const statesIcons = { disabled: '◦', on: '+', off: '-' }
 for (const button of document.getElementsByTagName('button')) {
   const type = button.textContent.slice(1)
   types.push(type)

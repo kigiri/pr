@@ -77,6 +77,9 @@ button {
   border: none;
   margin: 0;
 }
+a {
+  text-decoration: none;
+}
 .on {
   color: var(--green);
 }
@@ -104,9 +107,6 @@ const c = [
   return {...acc, [color.replace(/-(.)/, (_,a)=> a.toUpperCase())]: f }
 }, { off: `</span>` })
 
-const authUrl = 'https://github.com/login/oauth/authorize'
-// const githubUrl = 'https://github.com/login/oauth/access_token' // POST
-
 const rand = () =>
   Math.random()
     .toString(36)
@@ -114,7 +114,6 @@ const rand = () =>
 
 const query = `
 query ($name: String!, $owner: String!) {
-
   repository(owner: $owner, name: $name) {
     pullRequests(first: 100, states: OPEN) {
       edges {
@@ -145,13 +144,12 @@ query ($name: String!, $owner: String!) {
   }
 }`
 
-const getList = async variables => {
+const getList = async (variables, token) => {
   const res = await fetch('https://api.github.com/graphql', {
-   // credentials: 'include',
     headers: {
       accept: 'application/vnd.github.shadow-cat-preview+json',
       'content-type': 'application/json',
-      Authorization: `bearer ${localStorage.token}`,
+      Authorization: `bearer ${token}`,
     },
     body: JSON.stringify({ query, variables }),
     method: 'POST',
@@ -168,9 +166,6 @@ const getList = async variables => {
   const pulls = data.repository && data.repository.pullRequests
   return pulls && pulls.edges.map(e => e.node)
 }
-
-// getList({ name: 'all', owner: '01-edu' })
-
 
 const getToken = async () => {
   const { searchParams } = new URL(window.location)
@@ -195,7 +190,7 @@ const getToken = async () => {
   localStorage.state = state
 
   // Request a user's GitHub identity
-  const authorizationUrl = `${authUrl}?${[
+  const authorizationUrl = `https://github.com/login/oauth/authorize?${[
     // Required. The client ID you received from GitHub when you registered.
     `client_id=bc9a4b96852fb49c7cb9`,
 
@@ -216,7 +211,6 @@ const getToken = async () => {
   return new Promise(() => {})
 }
 
-const root = document.getElementById('root')
 const X = c.red('x')
 const O = c.green('o')
 const TO = c.pink('▸')
@@ -226,50 +220,41 @@ const mergeable = pr => {
   return pr.mergeable === 'MERGEABLE' ? O : X
 }
 const assignees = pr => {
-  console.log(pr)
   if (!pr.assignees.edges.length) return ''
   return `${TO} ${pr.assignees.edges.map(e => e.node.login).join(', ')}`
 }
 
 const empty = str => Boolean(str.trim())
 const DASH = c.comment('-')
+const generateHTML = pr => `<article ${[
+  `data-draft=${pr.isDraft ? 'on' : 'off'}`,
+  `data-unassigned=${!pr.assignees.edges.length ? 'on' : 'off'}`,
+  `data-assigned=${
+    pr.assignees.edges.some(e => e.node.login === pr.user) ? 'on' : 'off'
+  }`,
+].join(' ')}>${[
+  [
+    mergeable(pr),
+    [
+      `<a href="https://github.com/${pr.baseRepository.nameWithOwner}/pull/${
+        pr.number
+      }/files?w=1">`,
+      c.purple(pr.baseRepository.nameWithOwner),
+      c.yellow(`#${pr.number}`),
+      '</a>',
+    ].join(''),
+    `${pr.additions - pr.deletions} lines`,
+    `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
+  ].join(' '),
+  `  ${c.cyan(pr.author.login)}: ${c.foregroundLight(pr.title)}`,
+  `  ${assignees(pr)}`,
+  pr.bodyText && `<div class="message">${pr.bodyText}</div>`,
+]
+  .filter(empty)
+  .join('\n')}
+</article>`
 
-root.innerHTML = localStorage.content || ''
-getToken()
-  .then(async token => {
-    const pulls = (await Promise.all([
-      getList({ name: 'all', owner: '01-edu' }),
-      getList({ name: 'public', owner: '01-edu' }),
-    ]))
-    .flat()
-    .map(pr => ({
-      ...pr,
-      createdAt: new Date(pr.createdAt)
-    }))
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .map(pr => `<article ${[
-        `data-draft=${pr.isDraft ? "on" : "off"}`,
-        `data-unassigned=${!pr.assignees.edges.length ? "on" : "off"}`,
-        `data-assigned=${pr.assignees.edges.some(e => e.node.login === 'kigiri') ? "on" : "off"}`,
-      ].join(' ')}>${[
-      [
-        mergeable(pr),
-        `${c.purple(pr.baseRepository.nameWithOwner)}${c.yellow(`#${pr.number}`)}`,
-        `${pr.additions - pr.deletions} lines`,
-        `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
-      ].join(' '),
-      `  ${c.cyan(pr.author.login)}: ${c.foregroundLight(pr.title)}`,
-      `  ${assignees(pr)}`,
-      pr.bodyText && `<div class="message">${pr.bodyText}</div>`,
-    ]
-    .join('\n')}</article>`)
-    document.body.style.opacity = 1
-    const content = pulls.join('')
-    localStorage.content = content
-    root.innerHTML = content
-    filterElements()
-  })
-
+const root = document.getElementById('root')
 const types = []
 const state = {}
 const filterElements = () => {
@@ -296,6 +281,22 @@ const applyButtonState = (button, type, s) => {
   localStorage[type] = s
 }
 
+const loadPulls = async (token, userPromise) => {
+  const allPr = getList({ name: 'all', owner: '01-edu' }, token)
+  const publicPr = getList({ name: 'public', owner: '01-edu' }, token)
+  const user = await userPromise
+  const pulls = [ ...(await allPr), ...(await publicPr) ]
+    .map(pr => ({ ...pr, createdAt: new Date(pr.createdAt), user }))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(generateHTML)
+
+  document.body.style.opacity = 1
+  const content = pulls.join('')
+  localStorage.content = content
+  root.innerHTML = content
+  filterElements()
+}
+
 const statesIcons = { disabled: ' ', on: '+', off: '-' }
 for (const button of document.getElementsByTagName('button')) {
   const type = button.textContent.slice(1)
@@ -317,8 +318,26 @@ for (const button of document.getElementsByTagName('button')) {
     console.log(state)
   })
 }
+
+// restore cached state
+root.innerHTML = localStorage.content || ''
 filterElements()
-console.log(state)
+
+// fetch fresh state
+getToken().then(token => {
+  const user = localStorage.user ||
+    fetch('https://api.github.com/user', {
+      headers: { Authorization: `bearer ${token}` },
+      mode: 'cors',
+    }).then(async res => (localStorage.user = (await res.json()).login))
+
+  const poller = () => {
+    if (document.hidden) return setTimeout(poller, 100)
+    loadPulls(token, user).then(() => setTimeout(poller, 5000))
+  }
+
+  return poller()
+})
 
 </script>
   </body>

@@ -79,7 +79,10 @@ body {
   padding-left: 2ch;
   white-space: pre-wrap;
 }
-
+label, #menu {
+  display: inline-flex;
+  align-items: center;
+}
 button {
   border: none;
   margin: 0;
@@ -93,12 +96,18 @@ a {
 .off {
   color: var(--pink)
 }
+#root.mini .hideable {
+  display: none;
+}
 </style>
   </head>
   <body style="opacity: 0.75">
-    <button>◦draft</button>
-    <button>◦unassigned</button>
-    <button>◦assigned</button>
+    <div id="menu">
+      <label><input type="checkbox" id="mini">mini</label>
+      <button>◦draft</button>
+      <button>◦unassigned</button>
+      <button>◦assigned</button>
+    </div>
     <div id="root"></div>
 <script type="module">
 
@@ -125,44 +134,43 @@ const query = `
 query ($name: String!, $owner: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(first: 100, states: OPEN) {
-      edges {
-        node {
-          number
-          author { login }
-          baseRepository { nameWithOwner }
-          createdAt
-          updatedAt
-          additions
-          deletions
-          mergeable
-          state
-          title
-          isDraft
-          activeLockReason
-          closed
-          bodyText
-          reviews(first: 10) {
-            nodes {
-              state
-              author {
-                login
+      nodes {
+        number
+        author { login }
+        baseRepository { nameWithOwner }
+        createdAt
+        updatedAt
+        additions
+        deletions
+        mergeable
+        headRefName
+        state
+        title
+        isDraft
+        activeLockReason
+        closed
+        bodyText
+        reviews(first: 10) {
+          nodes {
+            state
+            author {
+              login
+            }
+          }
+        }
+        reviewRequests(first: 10) {
+          nodes {
+            requestedReviewer {
+              ... on User {
+                login 
               }
             }
           }
-          reviewRequests(first: 10) {
-            nodes {
-              requestedReviewer {
-                ... on User {
-                  login 
-                }
-              }
-            }
-          }
-          assignees(first: 10) {
-            nodes {
-              ...on User {
-                login
-              }
+        }
+        assignees(first: 10) {
+          nodes {
+            ...on User {
+              login
             }
           }
         }
@@ -191,7 +199,7 @@ const getList = async (variables, token) => {
     throw err
   }
   const pulls = data.repository && data.repository.pullRequests
-  return pulls && pulls.edges.map(e => e.node)
+  return pulls && pulls.nodes
 }
 
 const getToken = async () => {
@@ -282,7 +290,7 @@ const assign = pr => {
   return { logins, value }
 }
 
-const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+const rtf = new Intl.RelativeTimeFormat({ numeric: 'auto',  style: 'narrow' })
 const units = Object.entries({
   second: 1000,
   minute: 60*1000,
@@ -320,27 +328,25 @@ const generateHTML = pr => `<article ${[
     '<div style="white-space:nowrap;display:inline-block">',
     mergeable(pr),
     [
-      `<a href="https://github.com/${pr.baseRepository.nameWithOwner}/pull/${
-        pr.number
-      }/files?w=1">`,
+      `<a href="https://github.com/${pr.baseRepository.nameWithOwner}/pull/${pr.number}/files?w=1">`,
       c.purple(pr.baseRepository.nameWithOwner),
       c.yellow(`#${pr.number}`),
+      c.pink(` ${pr.headRefName}`),
       '</a>',
     ].join(''),
     `${pr.additions - pr.deletions} lines`,
     `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
-    `<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`,
+    c.comment(`<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`),
     line,
     '</div>'
   ].join(' '),
-  `${o}${c.cyan(pr.author.login)} ${c.comment('▹')} ${c.foregroundLight(pr.title)}`,
+  `<div class="hideable">${o}${c.cyan(pr.author.login)} ${c.comment('▹')} ${c.foregroundLight(pr.title)}`,
   `${o}${pr.to.value}`,
   pr.bodyText && `<div class="message">${pr.bodyText}</div>`,
 ]
   .filter(empty)
   .join('<br>')}
-<br>${c.background('.')}
-</article>`
+<br>${c.background('.')}</div></article>`
 
 const root = document.getElementById('root')
 const types = []
@@ -451,6 +457,22 @@ getToken().then(token => {
   }
 
   return poller()
+})
+
+// mini toogle
+const miniCheckBox = document.getElementById('mini')
+let miniState = localStorage.mini
+if (miniState) {
+  miniCheckBox.checked = true
+  root.classList.add('mini')
+}
+miniCheckBox.addEventListener('change', e => {
+  if ((miniState = !miniState)) {
+    localStorage.mini = 'true'
+  } else {
+    localStorage.removeItem('mini')
+  }
+  root.classList.toggle('mini', miniState)
 })
 
 </script>

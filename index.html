@@ -280,7 +280,9 @@ const assign = pr => {
   const logins = sortedUnique([
     ...pr.reviews.nodes.map(n => n.author.login),
     ...pr.assignees.nodes.map(n => n.login),
-    ...pr.reviewRequests.nodes.map(n => n.requestedReviewer.login),
+    ...pr.reviewRequests.nodes
+      .filter(n => n.requestedReviewer)
+      .map(n => n.requestedReviewer.login),
   ])
 
   const value = logins

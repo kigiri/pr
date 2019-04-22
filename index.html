@@ -352,11 +352,18 @@ const generateHTML = pr => `<article ${[
 
 const root = document.getElementById('root')
 const types = []
+const buttons = {}
 const state = {}
 const filterElements = () => {
   const onTypes = types.filter(t => state[t] === 'on')
   const offTypes = types.filter(t => state[t] === 'off')
+  const counts = new Map(types.map(t => [t, 0]))
   for (const article of document.getElementsByTagName('article')) {
+    for (const type of types) {
+      if (article.dataset[type] === 'on') {
+        counts.set(type, counts.get(type) + 1)
+      }
+    }
     if (!offTypes.length && !onTypes.length) {
       article.style.display = ''
       continue
@@ -368,6 +375,10 @@ const filterElements = () => {
       : offTypes.some(type => article.dataset[type] === 'off')
 
     article.style.display = show ? '' : 'none'
+  }
+  for (const [type, count] of counts) {
+    const button = buttons[type]
+    button.textContent = `${statesIcons[button.className] || statesIcons.disabled}${type}(${count})`
   }
 }
 
@@ -389,9 +400,9 @@ const showTime = () => {
   }
 }
 
-const applyButtonState = (button, type, s) => {
+const applyButtonState = (type, s) => {
+  const button = buttons[type]
   button.className = s
-  button.textContent = `${statesIcons[s]}${type}`
   localStorage[type] = s
 }
 
@@ -422,9 +433,10 @@ const statesIcons = { disabled: '◦', on: '+', off: '-' }
 for (const button of document.getElementsByTagName('button')) {
   const type = button.textContent.slice(1)
   types.push(type)
+  buttons[type] = button
   let s = localStorage[type] || 'disabled'
   state[type] = s
-  applyButtonState(button, type, s)
+  applyButtonState(type, s)
   button.addEventListener('click', () => {
     if (s === 'disabled') {
       s = 'on'
@@ -434,8 +446,8 @@ for (const button of document.getElementsByTagName('button')) {
       s = 'disabled'
     }
     state[type] = s
+    applyButtonState(type, s)
     filterElements()
-    applyButtonState(button, type, s)
   })
 }
 

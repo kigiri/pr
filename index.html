@@ -130,9 +130,10 @@ const rand = () =>
     .toString(36)
     .slice(2)
 
-const query = `
-query ($name: String!, $owner: String!) {
-  repository(owner: $owner, name: $name) {
+const toKey = ([owner, name]) => `_${owner.replace(/-/g, '_')}_${name.replace(/-/g, '_')}`
+const query = repos => `
+query {${repos.map(([owner, name]) => `
+  ${toKey([owner, name])}: repository(owner: "${owner}", name: "${name}") {
     pullRequests(first: 100, states: OPEN) {
       nodes {
         number
@@ -176,17 +177,17 @@ query ($name: String!, $owner: String!) {
         }
       }
     }
-  }
+  }`).join('\n')}
 }`
 
-const getList = async (variables, token) => {
+const getList = async (repos, token) => {
   const res = await fetch('https://api.github.com/graphql', {
     headers: {
       accept: 'application/vnd.github.shadow-cat-preview+json',
       'content-type': 'application/json',
       Authorization: `bearer ${token}`,
     },
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify({ query: query(repos) }),
     method: 'POST',
     mode: 'cors',
   })
@@ -198,15 +199,22 @@ const getList = async (variables, token) => {
     err.column = errors[0].column
     throw err
   }
-  const pulls = data.repository && data.repository.pullRequests
-  return pulls && pulls.nodes
+
+  return repos.map(toKey).flatMap(key => {
+    const pulls = data[key] && data[key].pullRequests
+    return pulls && pulls.nodes
+  })
 }
 
 const getToken = async () => {
   const { searchParams } = new URL(window.location)
-  window.history.replaceState('', '', window.location.pathname)
+  const repos = (searchParams.get('repos') || localStorage.repos || '01-edu/public 01-edu/all')
+    .split(' ')
+  localStorage.repos = repos.join(' ')
   const cachedToken = localStorage.token
-  if (cachedToken) return cachedToken
+  const urlRepos = repos.map(encodeURIComponent).join('+')
+  window.history.replaceState('', '', `${window.location.pathname}?repos=${urlRepos}`)
+  if (cachedToken) return { token: cachedToken, repos }
 
   const paramState = searchParams.get('state')
   if (paramState && searchParams.has('code')) {
@@ -218,11 +226,14 @@ const getToken = async () => {
     const res = await fetch(`https://pr.kigiri.now.sh/auth?${searchParams}`)
     const body = await res.text()
     const token = new URLSearchParams(body).get('access_token')
-    return localStorage.token = token
+    history
+    localStorage.token = token
+    return { token, repos }
   }
 
   const state = [rand(), rand(), rand()].join('-')
   localStorage.state = state
+
 
   // Request a user's GitHub identity
   const authorizationUrl = `https://github.com/login/oauth/authorize?${[
@@ -338,7 +349,8 @@ const generateHTML = pr => `<article ${[
     ].join(''),
     `${pr.additions - pr.deletions} lines`,
     `(+${c.green(pr.additions)} -${c.red(pr.deletions)})`,
-    c.comment(`<time datetime="${pr.updatedAt}">${fmtTime(pr.updatedAt)}</time>`),
+    c.comment(`<time datetime="${pr.createdAt}">created ${fmtTime(pr.createdAt)}</time>`),
+    c.comment(` <time datetime="${pr.updatedAt}">updated ${fmtTime(pr.updatedAt)}</time>`),
     line,
     '</div>'
   ].join(' '),
@@ -406,15 +418,18 @@ const applyButtonState = (type, s) => {
   localStorage[type] = s
 }
 
-const loadPulls = async (token, userPromise) => {
-  const allPr = getList({ name: 'all', owner: '01-edu' }, token)
-  const publicPr = getList({ name: 'public', owner: '01-edu' }, token)
-  const user = await userPromise
-  const pulls = [ ...(await allPr), ...(await publicPr) ]
+const loadPulls = async (token, userPromise, repos) => {
+  const [user, data] = await Promise.all([
+    userPromise,
+    getList(repos.map(path => path.trim().split('/')), token),
+  ])
+
+  const pulls = data
     .map(pr => ({
       ...pr,
       user,
       updatedAt: new Date(pr.updatedAt),
+      createdAt: new Date(pr.createdAt),
       to: assign(pr),
     }))
     .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -458,7 +473,7 @@ showTime()
 setInterval(showTime, 100)
 
 // fetch fresh state
-getToken().then(token => {
+getToken().then(({ token, repos }) => {
   const user = localStorage.user ||
     fetch('https://api.github.com/user', {
       headers: { Authorization: `bearer ${token}` },
@@ -467,7 +482,7 @@ getToken().then(token => {
 
   const poller = () => {
     if (document.hidden) return setTimeout(poller, 100)
-    loadPulls(token, user).then(() => setTimeout(poller, 5000))
+    loadPulls(token, user, repos).then(() => setTimeout(poller, 5000))
   }
 
   return poller()
